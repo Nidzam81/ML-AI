@@ -1,8 +1,3 @@
-"""
-Dash port of Shiny iris k-means example:
-
-https://shiny.rstudio.com/gallery/kmeans-example.html
-"""
 import dash
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
@@ -12,10 +7,24 @@ import plotly.graph_objs as go
 from dash.dependencies import Input, Output
 from sklearn import datasets
 from sklearn.cluster import KMeans
+from glob import glob
+from os import getcwd, chdir
+import tensorflow as tf
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.layers import Embedding, LSTM, Dense, Dropout, Bidirectional
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+from tensorflow import keras
+import numpy as np  
+import json
+algo_list = glob('*.h5')
+print(algo_list)
 
-iris_raw = datasets.load_iris()
-iris = pd.DataFrame(iris_raw["data"], columns=iris_raw["feature_names"])
 
+#importing word index
+with open('word_index.json') as f:
+    word_index = json.load(f)
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 controls = dbc.Card(
@@ -24,11 +33,11 @@ controls = dbc.Card(
             [
                 dbc.Label("Pilih algoritma"),
                 dcc.Dropdown(
-                    id="x-variable",
+                    id="algo",
                     options=[
-                        {"label": col, "value": col} for col in iris.columns
+                        {"label": algo, "value": algo} for algo in algo_list
                     ],
-                    value="sepal length (cm)",
+                    value="2-Layer-Bidirectional-LTSM.h5",
                 ),
             ]
         ),
@@ -36,14 +45,20 @@ controls = dbc.Card(
         dbc.FormGroup(
             [
                 dbc.Label("Perkataan benih"),
-                dbc.Input(id="cluster-count"),
+                dbc.Input(id="seed",value="Cinta"),
             ]
         ),
         
         dbc.FormGroup(
             [
                 dbc.Label("Panjang perkataan"),
-                dbc.Input(id="count", type="number", value=10),
+                dbc.Input(id="word-length", type="number", value=10),
+            ]
+        ),
+
+        dbc.FormGroup(
+            [
+            dbc.Button("Cipta", id="example-button", className="mr-2")
             ]
         ),
     ],
@@ -58,13 +73,7 @@ app.layout = dbc.Container(
         dbc.Row(
             [
                 dbc.Col(controls, md=4),
-                # dbc.Col(dbc.Jumbotron(id="cluster-graph"), md=8),
                 dbc.Col(dbc.Jumbotron(id="algo-output",
-                    # [
-                    #     html.P(
-                    #         "Use a jumbotron to call attention to featured content or information.",
-                    #     ),
-                    # ]
                     ), md=8, 
                 ),               
             ],
@@ -78,66 +87,34 @@ app.layout = dbc.Container(
 @app.callback(
     Output("algo-output", "children"),
     [
-        # Input("x-variable", "value"),
-        # Input("y-variable", "value"),
-        Input("cluster-count", "value"),
+        dash.dependencies.Input("example-button",'n_clicks'),
+        dash.dependencies.State("word-length", "value"),
+        dash.dependencies.State("algo", "value"),
+        dash.dependencies.State("seed", "value"),
+        
     ],
 )
 
-def update_output_div(input_value):
-    return 'Output: {}'.format(input_value)
-
-# def make_graph(x, y, n_clusters):
-#     # minimal input validation, make sure there's at least one cluster
-#     km = KMeans(n_clusters=max(n_clusters, 1))
-#     df = iris.loc[:, [x, y]]
-#     km.fit(df.values)
-#     df["cluster"] = km.labels_
-
-#     centers = km.cluster_centers_
-
-#     data = [
-#         go.Scatter(
-#             x=df.loc[df.cluster == c, x],
-#             y=df.loc[df.cluster == c, y],
-#             mode="markers",
-#             marker={"size": 8},
-#             name="Cluster {}".format(c),
-#         )
-#         for c in range(n_clusters)
-#     ]
-
-#     data.append(
-#         go.Scatter(
-#             x=centers[:, 0],
-#             y=centers[:, 1],
-#             mode="markers",
-#             marker={"color": "#000", "size": 12, "symbol": "diamond"},
-#             name="Cluster centers",
-#         )
-#     )
-
-#     layout = {"xaxis": {"title": x}, "yaxis": {"title": y}}
-
-#     return go.Figure(data=data, layout=layout)
-
-
-# # make sure that x and y values can't be the same variable
-# def filter_options(v):
-#     """Disable option v"""
-#     return [
-#         {"label": col, "value": col, "disabled": col == v}
-#         for col in iris.columns
-#     ]
-
-
-# # functionality is the same for both dropdowns, so we reuse filter_options
-# app.callback(Output("x-variable", "options"), [Input("y-variable", "value")])(
-#     filter_options
-# )
-# app.callback(Output("y-variable", "options"), [Input("x-variable", "value")])(
-#     filter_options
-# )
+def update_output_div(value,length,algo,seed):
+    #importing saved model
+    model = keras.models.load_model(algo)
+    seed_text = seed
+    next_words = length
+    max_sequence_len = 100
+    tokenizer = Tokenizer()
+    tokenizer.word_index = word_index
+    for _ in range(next_words):
+        token_list = tokenizer.texts_to_sequences([seed_text])[0]
+        # print(token_list)
+        token_list = pad_sequences([token_list], maxlen=max_sequence_len-1, padding='pre')
+        predicted = model.predict_classes(token_list, verbose=0)
+        output_word = ""
+        for word, index in tokenizer.word_index.items():
+            if index == predicted:
+                output_word = word
+                break
+        seed_text += " " + output_word
+    return seed_text
 
 
 if __name__ == "__main__":
